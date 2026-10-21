@@ -258,6 +258,10 @@ function next(){
   const img=d.querySelector("img");if(img)img.addEventListener("error",()=>{clearTimeout(timer);next();});
 }
 
+/* auto-update: reload when a newer version is published */
+const VERSION="2026-10-21c";
+async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
+checkUpdate();setInterval(checkUpdate,5*60e3);
 tick();setInterval(tick,10000);
 refreshAll().then(next);
 setInterval(refreshAll,CONFIG.refreshMinutes*60e3);
