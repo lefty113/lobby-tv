@@ -16,6 +16,7 @@ const CONFIG = {
   surfrUrl: "",       // Surfr Spot Dashboard link. "" = skip
   slideSeconds: { forecast: 25, tides: 15, surfr: 30, photo: 10 },
   mediaPerRound: 4,
+  station: 16561,      // Windguru live station (KWind Ilha do Guajiru)
   refreshMinutes: 15
 };
 </script>
@@ -110,7 +111,7 @@ html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inte
       <div id="minitide"></div>
       <div class="tidenext" id="tidenext"></div>
     </div>
-    <div id="foot">Forecast & tide: Open-Meteo models · <span id="upd"></span></div>
+    <div id="foot">Live wind: Windguru station · Forecast: GFS · Tide: Open-Meteo · <span id="upd"></span></div>
   </aside>
 </div>
 
@@ -139,7 +140,7 @@ function windWord(k){return k<10?["Light","#F2F2F4","#6E6E73"]:k<14?["Marginal",
 async function loadWeather(){
   const u=`https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}`+
   `&current=wind_speed_10m,wind_gusts_10m,wind_direction_10m&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,temperature_2m,cloud_cover,precipitation`+
-  `&wind_speed_unit=kn&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&forecast_days=4`;
+  `&wind_speed_unit=kn&models=gfs_seamless&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&forecast_days=4`;
   WX=await(await fetch(u)).json();
 }
 async function loadTide(){
@@ -165,12 +166,20 @@ const FORCE_THEME=new URLSearchParams(location.search).get("theme"); // ?theme=d
 function applyTheme(){const h=localHour(Date.now());document.documentElement.dataset.theme=FORCE_THEME||((h>=6&&h<18)?"day":"night");}
 function tick(){applyTheme();const d=new Date();$("#clock").textContent=fmtT(d);
   $("#date").textContent=d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",timeZone:CONFIG.tz});}
+let ST=null;
+async function loadStation(){try{const j=await(await fetch("https://www.windguru.cz/int/iapi.php?q=station_data_current&id_station="+CONFIG.station,{cache:"no-store"})).json();ST=(j&&j.wind_avg!=null&&Date.now()/1000-j.unixtime<2700)?j:null;}catch(e){ST=null;}renderWindNow();}
+function renderWindNow(){
+  let k,g,d,lbl;
+  if(ST){k=ST.wind_avg;g=ST.wind_max;d=ST.wind_direction;lbl="Live wind · station "+fmtT(new Date(ST.unixtime*1000));}
+  else if(WX&&WX.current){const c=WX.current;k=c.wind_speed_10m;g=c.wind_gusts_10m;d=c.wind_direction_10m;lbl="Wind now · forecast";}
+  else return;
+  $("#spotlbl").textContent=lbl;
+  $("#wnow").innerHTML=Math.round(k)+"<small>kn</small>";
+  $("#gnow").textContent=`Gusts ${Math.round(g)} kn · from ${compass(d)}`;
+  $("#arrowg").setAttribute("transform",`rotate(${d+180})`);
+}
 function renderSide(){
-  if(WX&&WX.current){const c=WX.current,k=c.wind_speed_10m;
-    $("#wnow").innerHTML=Math.round(k)+"<small>kn</small>";
-    $("#gnow").textContent=`Gusts ${Math.round(c.wind_gusts_10m)} kn · from ${compass(c.wind_direction_10m)}`;
-    $("#arrowg").setAttribute("transform",`rotate(${c.wind_direction_10m+180})`);
-  }
+  renderWindNow();
   if(TIDE){const now=Date.now(),d0=startOfLocalDay(now);drawTide($("#minitide"),d0,d0+24*3600e3,{mini:true});
     $("#tidenext").innerHTML=TIDE.ext.filter(e=>e.t>now).slice(0,2).map(e=>`<div>Next ${e.type}<b style="color:${e.type==="high"?"var(--blue)":"var(--amber)"}">${fmtT(new Date(e.t))}</b></div>`).join("");}
 }
@@ -179,7 +188,7 @@ function renderSide(){
 function interp(ms){const t=TIDE.t,h=TIDE.h;for(let i=0;i<t.length-1;i++)if(ms>=t[i]&&ms<=t[i+1]&&h[i]!=null&&h[i+1]!=null)return h[i]+(h[i+1]-h[i])*(ms-t[i])/(t[i+1]-t[i]);return null;}
 function drawTide(box,t0,t1,opt={}){
   box.innerHTML="";const m=opt.mini,id=m?"m":"b";
-  const W=box.clientWidth||(m?400:1200),H=box.clientHeight||(m?150:600),pl=m?6:10,pr=m?6:10,pt=m?28:110,pb=m?28:150;
+  const BW=box.clientWidth||(m?400:1200),BH=box.clientHeight||(m?150:600),W=m?400:1200,H=Math.round(W*BH/BW),pl=m?6:10,pr=m?6:10,pt=m?28:110,pb=m?28:150;
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`},box);
   const pts=TIDE.t.map((t,i)=>[t,TIDE.h[i]]).filter(p=>p[0]>=t0-3600e3&&p[0]<=t1+3600e3&&p[1]!=null);
   if(!pts.length){txt(svg,20,40,"No tide data");return;}
@@ -189,8 +198,6 @@ function drawTide(box,t0,t1,opt={}){
   el("stop",{offset:"0","stop-color":"var(--tide)","stop-opacity":.38},gr);el("stop",{offset:"1","stop-color":"var(--tide)","stop-opacity":.04},gr);
   const clip=el("clipPath",{id:"tc"+id},defs);el("rect",{x:pl,y:0,width:W-pl-pr,height:H},clip);
   if(!m)for(let d=t0;d<t1;d+=864e5){
-    el("rect",{x:X(d),y:pt-40,width:X(d+6*3600e3)-X(d),height:H-pt-pb+40,fill:"var(--shade)"},svg);
-    el("rect",{x:X(d+18*3600e3),y:pt-40,width:X(d+864e5)-X(d+18*3600e3),height:H-pt-pb+40,fill:"var(--shade)"},svg);
     if(d>t0)el("line",{x1:X(d),x2:X(d),y1:pt-40,y2:H-pb,stroke:"var(--hair)","stroke-width":2},svg);
     txt(svg,X(d)+14,H-14,fmtDay(new Date(d)),{"font-size":30,"font-weight":800,fill:"var(--ink)"});
     for(const hh of[6,12,18])txt(svg,X(d+hh*3600e3),H-56,String(hh).padStart(2,"0")+":00",{"text-anchor":"middle","font-size":18});
@@ -259,12 +266,13 @@ function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-21c";
+const VERSION="2026-10-21d";
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
 tick();setInterval(tick,10000);
 refreshAll().then(next);
 setInterval(refreshAll,CONFIG.refreshMinutes*60e3);
+loadStation();setInterval(loadStation,2*60e3);
 setTimeout(()=>location.reload(),6*3600e3);
 </script>
 </body>
