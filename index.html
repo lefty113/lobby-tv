@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lobby TV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+<script>
+/* ======================= CONFIG — edit these ======================= */
+const CONFIG = {
+  spotName: "Ilha do Guajiru",
+  lat: -2.8759, lon: -39.9216,
+  tz: "America/Fortaleza",
+  logo: "https://epicgust.com/wp-content/uploads/2026/03/white-landscape.webp",
+  mediaFeed: "",      // Google Apps Script /exec URL (see SETUP.md). "" = no media
+  surfrUrl: "",       // Surfr Spot Dashboard link. "" = skip
+  slideSeconds: { forecast: 25, tides: 15, surfr: 30, photo: 10 },
+  mediaPerRound: 4,
+  refreshMinutes: 15
+};
+</script>
+<style>
+:root{
+  --canvas:#F2F2F4; --card:#FFFFFF; --ink:#1D1D1F; --ink2:#6E6E73; --hair:#E3E3E8;
+  --blue:#0066CC; --amber:#B25000; --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.06);
+  --r:1.6vw;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inter,system-ui,sans-serif;overflow:hidden;cursor:none;-webkit-font-smoothing:antialiased}
+#app{display:grid;grid-template-columns:1fr 26vw;gap:1.6vw;height:100vh;padding:1.6vw}
+#stage{position:relative;border-radius:var(--r);overflow:hidden;background:var(--card);box-shadow:var(--shadow)}
+.slide{position:absolute;inset:0;opacity:0;transform:scale(1.015);transition:opacity 1s ease,transform 1.4s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
+.slide.on{opacity:1;transform:none}
+.slide img,.slide video{width:100%;height:100%;object-fit:cover}
+.slide iframe{width:100%;height:100%;border:0}
+.datasl{padding:2.6vw 2.8vw 2vw}
+.eyebrow{font-size:.95vw;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
+.datasl h2{font-size:3vw;font-weight:700;letter-spacing:-.025em;line-height:1.05;margin:.3vw 0 1.6vw}
+.chart{flex:1;min-height:0;display:flex;flex-direction:column}
+.chart svg{width:100%;height:100%}
+#side{display:flex;flex-direction:column;gap:1.2vw;min-height:0}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:1.5vw 1.6vw}
+.lbl{font-size:.8vw;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin-bottom:.5vw}
+#top{display:flex;justify-content:space-between;align-items:flex-start}
+#clock{font-size:4.2vw;font-weight:600;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
+#date{font-size:1.05vw;color:var(--ink2);margin-top:.5vw}
+#logo{height:2.6vw;filter:brightness(0);opacity:.85}
+.wind{display:flex;align-items:center;gap:1.2vw;margin-top:.3vw}
+.big{font-size:5vw;font-weight:700;letter-spacing:-.045em;line-height:.9;font-variant-numeric:tabular-nums}
+.big small{font-size:1.4vw;font-weight:500;color:var(--ink2);letter-spacing:0;margin-left:.3vw}
+.meta{font-size:1.05vw;color:var(--ink2);margin-top:.4vw}
+.pill{display:inline-block;padding:.25vw .7vw;border-radius:99px;font-size:.85vw;font-weight:600;margin-top:.7vw}
+.arrow{width:4.4vw;height:4.4vw;flex:none}
+#minitide{flex:1;min-height:10vw;margin:.2vw -.4vw 0}
+#minitide svg{width:100%;height:100%}
+.tidenext{display:flex;justify-content:space-between;margin-top:.6vw}
+.tidenext div{font-size:.85vw;color:var(--ink2);font-weight:500}
+.tidenext b{display:block;font-size:2vw;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+#best b{font-size:2.2vw;font-weight:700;letter-spacing:-.03em;display:block}
+#best span{font-size:1vw;color:var(--ink2)}
+#foot{margin-top:auto;padding-bottom:.2vw;font-size:.7vw;color:#A1A1A6;text-align:center}
+/* Windguru-style table */
+.wg{width:100%;border-collapse:separate;border-spacing:.25vw;margin:auto 0;table-layout:fixed;font-variant-numeric:tabular-nums}
+.wg th,.wg td{text-align:center;font-size:1.2vw;padding:0}
+.wg tbody td:not(.rowlbl){border-radius:.5vw}
+.wg tr.r-c td{height:5.2vw}.wg tr.r-g td{height:4vw}.wg tr.r-dir td{height:4vw}.wg tr.r-small td{height:3vw}
+.wg .rowlbl{width:7vw;text-align:left;font-size:.8vw;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);padding-right:.6vw}
+.wg thead .day th{font-size:1.4vw;font-weight:700;letter-spacing:-.01em;color:var(--ink);padding-bottom:.4vw;border-bottom:1px solid var(--hair)}
+.wg thead .hr th{font-size:1vw;font-weight:500;color:var(--ink2);padding:.9vw 0}
+.wg td.c{font-weight:700;font-size:1.55vw;letter-spacing:-.03em}
+.wg td.g{font-weight:600;font-size:1.3vw}
+.wg td.sep,.wg th.sep{border-left:.6vw solid #fff}
+.wg tbody tr:first-child td.c:not(.rowlbl){border-radius:0}
+.wg .dir svg{width:2vw;height:2vw}
+.wg .small{color:var(--ink2);font-size:1.1vw}
+.legend{display:flex;align-items:center;gap:.6vw;margin-top:auto;padding-top:1vw;font-size:.8vw;color:var(--ink2)}
+.legend i{display:inline-block;width:2.2vw;height:.7vw;border-radius:99px}
+.err{color:var(--amber);font-size:1.2vw}
+@media (prefers-reduced-motion: reduce){ .slide{transform:none!important;transition:opacity .6s ease} }
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage"></main>
+  <aside id="side">
+    <div class="card">
+      <div id="top"><div id="clock">--:--</div><img id="logo" alt=""></div>
+      <div id="date"></div>
+    </div>
+    <div class="card">
+      <div class="lbl" id="spotlbl">Wind now</div>
+      <div class="wind">
+        <svg class="arrow" viewBox="-50 -50 100 100"><circle r="46" fill="#F2F2F4"/><g id="arrowg"><path d="M0,-30 L13,20 L0,11 L-13,20 Z" fill="#1D1D1F"/></g></svg>
+        <div><div class="big" id="wnow">--<small>kn</small></div><div class="meta" id="gnow">Gusts --</div></div>
+      </div>
+    </div>
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <div class="lbl">Tide today</div>
+      <div id="minitide"></div>
+      <div class="tidenext" id="tidenext"></div>
+    </div>
+    <div id="foot">Forecast & tide: Open-Meteo models · <span id="upd"></span></div>
+  </aside>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), NS="http://www.w3.org/2000/svg";
+let WX=null, TIDE=null, MEDIA=[];
+$("#logo").src=CONFIG.logo; $("#logo").onerror=function(){this.remove()};
+$("#spotlbl").textContent="Wind now · "+CONFIG.spotName;
+
+const fmtT=d=>d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",timeZone:CONFIG.tz});
+const fmtDay=d=>d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",timeZone:CONFIG.tz});
+const compass=d=>["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(d/22.5)%16];
+function el(tag,a={},p){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;}
+function txt(p,x,y,s,a={}){const t=el("text",Object.assign({x,y,fill:"#6E6E73","font-family":"Inter","font-size":14},a),p);t.textContent=s;return t;}
+function localHour(ms){return +new Intl.DateTimeFormat("en-GB",{hour:"2-digit",hour12:false,timeZone:CONFIG.tz}).format(new Date(ms))%24;}
+function startOfLocalDay(ms){const p=new Intl.DateTimeFormat("en-CA",{timeZone:CONFIG.tz,hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(ms));
+  const g=k=>+p.find(x=>x.type===k).value; return ms-((g("hour")%24)*3600e3+g("minute")*60e3)-(ms%60e3);}
+
+/* Windguru-like wind colour scale (knots) */
+const WG=[[0,"#FFFFFF"],[5,"#E8F6FF"],[8,"#BDEBFF"],[11,"#8EF3E3"],[14,"#7BEA7B"],[17,"#C8F03C"],[20,"#FFE53C"],[23,"#FFB03C"],[26,"#FF6E46"],[30,"#F0466E"],[35,"#D246C8"],[40,"#9650E6"]];
+function hex(h){return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16));}
+function windColor(k){for(let i=0;i<WG.length-1;i++){const[a,ca]=WG[i],[b,cb]=WG[i+1];if(k<=b){const t=Math.max(0,(k-a)/(b-a)),A=hex(ca),B=hex(cb);return`rgb(${A.map((v,j)=>Math.round(v+(B[j]-v)*t))})`;}}return WG[WG.length-1][1];}
+const textOn=k=>k>=33?"#fff":"#1D1D1F";
+function windWord(k){return k<10?["Light","#F2F2F4","#6E6E73"]:k<14?["Marginal","#E8F6FF","#0066CC"]:k<22?["Kiteable","#E3F7E3","#1E7A1E"]:k<28?["Strong","#FFF1D6","#B25000"]:["Very strong","#FFE3E3","#C0282D"];}
+
+/* ---------- data ---------- */
+async function loadWeather(){
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}`+
+  `&current=wind_speed_10m,wind_gusts_10m,wind_direction_10m&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,temperature_2m,cloud_cover,precipitation`+
+  `&wind_speed_unit=kn&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&forecast_days=4`;
+  WX=await(await fetch(u)).json();
+}
+async function loadTide(){
+  const u=`https://marine-api.open-meteo.com/v1/marine?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}`+
+  `&hourly=sea_level_height_msl&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&past_days=1&forecast_days=3&cell_selection=sea`;
+  const j=await(await fetch(u)).json(), t=j.hourly.time.map(s=>s*1000), h=j.hourly.sea_level_height_msl, ext=[];
+  for(let i=1;i<h.length-1;i++){ if(h[i]==null||h[i-1]==null||h[i+1]==null)continue;
+    const mx=h[i]>=h[i-1]&&h[i]>h[i+1], mn=h[i]<=h[i-1]&&h[i]<h[i+1]; if(!mx&&!mn)continue;
+    const a=(h[i-1]-2*h[i]+h[i+1])/2,b=(h[i+1]-h[i-1])/2,dx=a?-b/(2*a):0;
+    ext.push({t:t[i]+dx*3600e3,h:a?h[i]-b*b/(4*a):h[i],type:mx?"high":"low"}); }
+  TIDE={t,h,ext};
+}
+async function loadMedia(){
+  if(!CONFIG.mediaFeed){MEDIA=[];return;}
+  try{const j=await(await fetch(CONFIG.mediaFeed)).json();
+    MEDIA=j.map(f=>({type:f.type,src:f.type==="video"?`https://drive.google.com/uc?export=download&id=${f.id}`:`https://lh3.googleusercontent.com/d/${f.id}=w1920`}));
+  }catch(e){console.warn(e);}
+}
+async function refreshAll(){await Promise.allSettled([loadWeather(),loadTide(),loadMedia()]);renderSide();$("#upd").textContent="updated "+fmtT(new Date());}
+
+/* ---------- sidebar ---------- */
+function tick(){const d=new Date();$("#clock").textContent=fmtT(d);
+  $("#date").textContent=d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",timeZone:CONFIG.tz});}
+function renderSide(){
+  if(WX&&WX.current){const c=WX.current,k=c.wind_speed_10m;
+    $("#wnow").innerHTML=Math.round(k)+"<small>kn</small>";
+    $("#gnow").textContent=`Gusts ${Math.round(c.wind_gusts_10m)} kn · from ${compass(c.wind_direction_10m)}`;
+    $("#arrowg").setAttribute("transform",`rotate(${c.wind_direction_10m+180})`);
+  }
+  if(TIDE){const now=Date.now(),d0=startOfLocalDay(now);drawTide($("#minitide"),d0,d0+24*3600e3,{mini:true});
+    $("#tidenext").innerHTML=TIDE.ext.filter(e=>e.t>now).slice(0,2).map(e=>`<div>Next ${e.type}<b style="color:${e.type==="high"?"var(--blue)":"var(--amber)"}">${fmtT(new Date(e.t))}</b></div>`).join("");}
+}
+
+/* ---------- tide chart ---------- */
+function interp(ms){const t=TIDE.t,h=TIDE.h;for(let i=0;i<t.length-1;i++)if(ms>=t[i]&&ms<=t[i+1]&&h[i]!=null&&h[i+1]!=null)return h[i]+(h[i+1]-h[i])*(ms-t[i])/(t[i+1]-t[i]);return null;}
+function drawTide(box,t0,t1,opt={}){
+  box.innerHTML="";const m=opt.mini,id=m?"m":"b";
+  const W=box.clientWidth||(m?400:1200),H=box.clientHeight||(m?150:600),pl=m?6:10,pr=m?6:10,pt=m?24:90,pb=m?24:120;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`},box);
+  const pts=TIDE.t.map((t,i)=>[t,TIDE.h[i]]).filter(p=>p[0]>=t0-3600e3&&p[0]<=t1+3600e3&&p[1]!=null);
+  if(!pts.length){txt(svg,20,40,"No tide data");return;}
+  const hs=TIDE.h.filter(v=>v!=null),mn=Math.min(...hs),mx=Math.max(...hs),pad=(mx-mn)*.08;
+  const X=t=>pl+(t-t0)/(t1-t0)*(W-pl-pr),Y=v=>pt+(1-(v-mn+pad)/(mx-mn+2*pad))*(H-pt-pb);
+  const defs=el("defs",{},svg),gr=el("linearGradient",{id:"tg"+id,x1:0,y1:0,x2:0,y2:1},defs);
+  el("stop",{offset:"0","stop-color":"#0A84FF","stop-opacity":.32},gr);el("stop",{offset:"1","stop-color":"#0A84FF","stop-opacity":.04},gr);
+  const clip=el("clipPath",{id:"tc"+id},defs);el("rect",{x:pl,y:0,width:W-pl-pr,height:H},clip);
+  if(!m)for(let d=t0;d<t1;d+=864e5){
+    el("rect",{x:X(d),y:pt-40,width:X(d+6*3600e3)-X(d),height:H-pt-pb+40,fill:"#F5F5F7"},svg);
+    el("rect",{x:X(d+18*3600e3),y:pt-40,width:X(d+864e5)-X(d+18*3600e3),height:H-pt-pb+40,fill:"#F5F5F7"},svg);
+    if(d>t0)el("line",{x1:X(d),x2:X(d),y1:pt-40,y2:H-pb,stroke:"#D2D2D7","stroke-width":1.5},svg);
+    txt(svg,X(d)+14,H-14,fmtDay(new Date(d)),{"font-size":22,"font-weight":700,fill:"#1D1D1F"});
+    for(const hh of[6,12,18])txt(svg,X(d+hh*3600e3),H-50,String(hh).padStart(2,"0")+":00",{"text-anchor":"middle","font-size":13});
+  }
+  const P=pts.map(p=>[X(p[0]),Y(p[1])]);let d=`M${P[0][0]},${P[0][1]}`;
+  for(let i=0;i<P.length-1;i++){const p0=P[i-1]||P[i],p1=P[i],p2=P[i+1],p3=P[i+2]||p2;
+    d+=` C${p1[0]+(p2[0]-p0[0])/6},${p1[1]+(p2[1]-p0[1])/6} ${p2[0]-(p3[0]-p1[0])/6},${p2[1]-(p3[1]-p1[1])/6} ${p2[0]},${p2[1]}`;}
+  const g=el("g",{"clip-path":`url(#tc${id})`},svg);
+  el("path",{d:d+` L${P[P.length-1][0]},${H-pb} L${P[0][0]},${H-pb} Z`,fill:`url(#tg${id})`},g);
+  el("path",{d,fill:"none",stroke:"#0A84FF","stroke-width":m?3:4,"stroke-linecap":"round"},g);
+  for(const e of TIDE.ext.filter(e=>e.t>=t0&&e.t<=t1)){
+    const x0=X(e.t),x=Math.max(pl+(m?18:46),Math.min(W-pr-(m?18:46),x0)),y=Y(e.h),hi=e.type==="high",c=hi?"#0066CC":"#B25000";
+    el("circle",{cx:x0,cy:y,r:m?4:7,fill:"#fff",stroke:c,"stroke-width":m?2.5:3.5},svg);
+    if(m){txt(svg,x,hi?y-9:y+20,fmtT(new Date(e.t)),{"text-anchor":"middle","font-size":14,"font-weight":600,fill:c});}
+    else{txt(svg,x,hi?y-38:y+40,fmtT(new Date(e.t)),{"text-anchor":"middle","font-size":28,"font-weight":700,fill:c,"letter-spacing":"-0.5"});
+         txt(svg,x,hi?y-18:y+60,(hi?"High · ":"Low · ")+e.h.toFixed(1)+" m",{"text-anchor":"middle","font-size":14,"font-weight":500,fill:c});}
+  }
+  const now=Date.now();if(now>=t0&&now<=t1){const x=X(now),v=interp(now);
+    el("line",{x1:x,x2:x,y1:m?0:pt-40,y2:H-(m?pb:pb-40),stroke:"#1D1D1F","stroke-width":m?1:1.5,"stroke-dasharray":"3 5"},svg);
+    if(v!=null)el("circle",{cx:x,cy:Y(v),r:m?5:9,fill:"#1D1D1F",stroke:"#fff","stroke-width":3},svg);
+    if(!m)txt(svg,x+10,pt-26,"Now",{"font-size":14,"font-weight":600,fill:"#1D1D1F"});}
+}
+
+/* ---------- Windguru-style forecast table ---------- */
+function arrowSvg(deg){return`<svg viewBox="-12 -12 24 24"><g transform="rotate(${deg+180})"><path d="M0,-10 L6,8 L0,4 L-6,8 Z" fill="#1D1D1F"/></g></svg>`;}
+function cloudIcon(c,p){ if(p>=0.5)return"🌧"; return c<25?"☀︎":c<60?"⛅︎":"☁︎"; }
+function drawForecast(box){
+  if(!WX||!WX.hourly){box.innerHTML='<div class="err">Forecast unavailable</div>';return;}
+  const H=WX.hourly,d0=startOfLocalDay(Date.now()),HOURS=[6,8,10,12,14,16,18],days=[0,1,2];
+  const cols=[];days.forEach(dd=>HOURS.forEach((hr,k)=>{const ms=d0+dd*864e5+hr*3600e3,i=H.time.findIndex(t=>Math.abs(t*1000-ms)<1800e3);if(i>=0)cols.push({i,dd,k,ms});}));
+  const row=(lbl,f,cls="")=>`<tr class="r-${cls||"x"}"><td class="rowlbl">${lbl}</td>${cols.map(c=>`<td class="${cls} ${c.k===0&&c.dd>0?"sep":""}" ${f.style?`style="${f.style(c.i)}"`:""}>${f(c.i)}</td>`).join("")}</tr>`;
+  const ws=i=>Math.round(H.wind_speed_10m[i]); ws.style=i=>`background:${windColor(H.wind_speed_10m[i])};color:${textOn(H.wind_speed_10m[i])}`;
+  const gs=i=>Math.round(H.wind_gusts_10m[i]); gs.style=i=>`background:${windColor(H.wind_gusts_10m[i])};color:${textOn(H.wind_gusts_10m[i])}`;
+  box.innerHTML=`<table class="wg"><thead>
+    <tr class="day"><th class="rowlbl"></th>${days.map(dd=>`<th colspan="${HOURS.length}" style="text-align:left;padding-left:.5vw">${fmtDay(new Date(d0+dd*864e5+12*3600e3))}</th>`).join("")}</tr>
+    <tr class="hr"><th class="rowlbl"></th>${cols.map(c=>`<th>${String(HOURS[c.k]).padStart(2,"0")}h</th>`).join("")}</tr></thead><tbody>
+    ${row("Wind kn",ws,"c")}${row("Gusts kn",gs,"g")}
+    ${row("Direction",i=>arrowSvg(H.wind_direction_10m[i]),"dir")}
+    ${row("Temp °C",i=>Math.round(H.temperature_2m[i])+"°","small")}
+  </tbody></table>
+  <div class="legend">${[6,10,14,18,22,26,30,35].map(k=>`<span><i style="background:${windColor(k)};box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)"></i> ${k}</span>`).join("")}<span style="margin-left:auto">Knots · arrows show where the wind blows</span></div>`;
+}
+
+/* ---------- slideshow ---------- */
+let queue=[],mediaPtr=0,current=null;
+function buildRound(){const r=[{kind:"forecast"},{kind:"tides"}];if(CONFIG.surfrUrl)r.push({kind:"surfr"});
+  for(let k=0;k<Math.min(CONFIG.mediaPerRound,MEDIA.length);k++){r.push({kind:"media",item:MEDIA[mediaPtr++%MEDIA.length]});}return r;}
+function makeSlide(s){
+  const d=document.createElement("div");d.className="slide";
+  if(s.kind==="forecast"){d.classList.add("datasl");d.innerHTML=`<div class="eyebrow">${CONFIG.spotName} · next 3 days</div><h2>Wind forecast</h2><div class="chart"></div>`;drawForecast(d.querySelector(".chart"));}
+  else if(s.kind==="tides"){d.classList.add("datasl");d.innerHTML=`<div class="eyebrow">${CONFIG.spotName} · next 3 days</div><h2>Tides</h2><div class="chart"></div>`;
+    if(TIDE){const t0=startOfLocalDay(Date.now());d.render=()=>drawTide(d.querySelector(".chart"),t0,t0+3*864e5);}else d.querySelector(".chart").innerHTML='<div class="err">Tide data unavailable</div>';}
+  else if(s.kind==="surfr"){d.innerHTML=`<iframe src="${CONFIG.surfrUrl}"></iframe>`;}
+  else{const it=s.item;d.innerHTML=it.type==="video"?`<video src="${it.src}" muted autoplay playsinline></video>`:`<img src="${it.src}" alt="">`;}
+  return d;
+}
+function next(){
+  if(!queue.length)queue=buildRound();
+  const s=queue.shift(),d=makeSlide(s);$("#stage").appendChild(d);if(d.render)d.render();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>d.classList.add("on")));
+  if(current){const o=current;o.classList.remove("on");setTimeout(()=>o.remove(),1500);}current=d;
+  const v=d.querySelector("video");
+  if(v){let done=false;const go=()=>{if(!done){done=true;next();}};v.addEventListener("ended",go);v.addEventListener("error",go);setTimeout(go,180000);return;}
+  let timer=setTimeout(next,(CONFIG.slideSeconds[s.kind]||CONFIG.slideSeconds.photo)*1000);
+  const img=d.querySelector("img");if(img)img.addEventListener("error",()=>{clearTimeout(timer);next();});
+}
+
+tick();setInterval(tick,10000);
+refreshAll().then(next);
+setInterval(refreshAll,CONFIG.refreshMinutes*60e3);
+setTimeout(()=>location.reload(),6*3600e3);
+</script>
+</body>
+</html>
