@@ -121,6 +121,8 @@ html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inte
 <script>
 const $=s=>document.querySelector(s), NS="http://www.w3.org/2000/svg";
 let WX=null, TIDE=null, MEDIA=[];
+/* Drive API key is passed once in the TV start URL (?key=...) and remembered on the TV; it is never stored in this public file */
+let DRIVE_KEY=null;try{const q=new URLSearchParams(location.search).get("key");if(q)localStorage.setItem("driveKey",q);DRIVE_KEY=localStorage.getItem("driveKey");}catch(e){DRIVE_KEY=new URLSearchParams(location.search).get("key");}
 $("#spotlbl").textContent="Wind now · "+CONFIG.spotName;
 
 const fmtT=d=>d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",timeZone:CONFIG.tz});
@@ -160,7 +162,8 @@ async function loadTide(){
 async function loadMedia(){
   if(!CONFIG.mediaFeed){MEDIA=[];return;}
   try{const j=await(await fetch(CONFIG.mediaFeed)).json();
-    MEDIA=j.map(f=>({type:f.type,src:f.type==="video"?`https://drive.usercontent.google.com/download?id=${f.id}&export=download&confirm=t`:`https://lh3.googleusercontent.com/d/${f.id}=w1920`}));
+    j.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
+    MEDIA=j.map(f=>({type:f.type,name:f.name,src:f.type==="video"?(DRIVE_KEY?`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&key=${DRIVE_KEY}`:`https://drive.usercontent.google.com/download?id=${f.id}&export=download&confirm=t`):`https://lh3.googleusercontent.com/d/${f.id}=w1920`}));
   }catch(e){console.warn(e);}
 }
 async function refreshAll(){await Promise.allSettled([loadWeather(),loadTide(),loadMedia()]);renderSide();setTimeout(renderSide,800);$("#upd").textContent="updated "+fmtT(new Date());}
@@ -273,7 +276,7 @@ function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-21h";
+const VERSION="2026-10-21i";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
