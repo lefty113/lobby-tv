@@ -16,6 +16,7 @@ const CONFIG = {
   surfrUrl: "",       // Surfr Spot Dashboard link. "" = skip
   slideSeconds: { forecast: 25, tides: 15, surfr: 30, photo: 10 },
   mediaPerRound: 4,
+  leftSafe: 6,         // % of screen width kept empty on the left (dead pixels on the TV). 0 = none
   station: 16561,      // Windguru live station (KWind Ilha do Guajiru)
   refreshMinutes: 15
 };
@@ -38,7 +39,8 @@ html,body,.card,#stage{transition:background-color 1.5s ease,color 1.5s ease}
 :root[data-theme="night"] .lg-n{display:block}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inter,system-ui,sans-serif;overflow:hidden;cursor:none;-webkit-font-smoothing:antialiased}
-#app{display:grid;grid-template-columns:1fr 26vw;gap:1.6vw;height:100vh;padding:1.6vw}
+#app{display:grid;grid-template-columns:1fr 26vw;gap:1.6vw;height:100vh;padding:1.6vw 1.6vw 1.6vw calc(1.6vw + var(--leftsafe,6vw))}
+.datasl .eyebrow,.datasl h2{text-align:right}
 #stage{position:relative;border-radius:var(--r);overflow:hidden;background:var(--card);box-shadow:var(--shadow)}
 .slide{position:absolute;inset:0;opacity:0;transform:scale(1.015);transition:opacity 1s ease,transform 1.4s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
 .slide.on{opacity:1;transform:none}
@@ -78,8 +80,8 @@ html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inte
 .wg .rowlbl{width:8vw;text-align:left;font-size:1.05vw;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);padding-right:.6vw}
 .wg thead .day th{font-size:1.9vw;font-weight:700;letter-spacing:-.01em;color:var(--ink);padding-bottom:.4vw;border-bottom:1px solid var(--hair)}
 .wg thead .hr th{font-size:1.35vw;font-weight:700;color:var(--ink2);padding:.9vw 0}
-.wg td.c{font-weight:800;font-size:2.3vw;color:#000!important;letter-spacing:-.03em}
-.wg td.g{font-weight:700;font-size:1.9vw;color:#000!important}
+.wg td.c{font-weight:800;font-size:2vw;color:#000!important;letter-spacing:-.03em}
+.wg td.g{font-weight:700;font-size:1.7vw;color:#000!important}
 .wg td.sep,.wg th.sep{border-left:.8vw solid var(--card)}
 .wg tbody tr:first-child td.c:not(.rowlbl){border-radius:0}
 .wg .dir svg{width:2.8vw;height:2.8vw}
@@ -271,7 +273,8 @@ function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-21f";
+const VERSION="2026-10-21g";
+document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
 tick();setInterval(tick,10000);
