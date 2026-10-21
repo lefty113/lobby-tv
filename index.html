@@ -268,13 +268,7 @@ function makeSlide(s){
 }
 function diag(m){console.warn(m);}
 let PRE=null;
-async function prepVideo(s){
-  try{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),45000);
-    const r=await fetch(s.item.src,{signal:ctl.signal});clearTimeout(to);
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    return URL.createObjectURL(await r.blob());}
-  catch(e){diag("video "+(s.item.name||"")+": "+(e.message||e));return null;}
-}
+async function prepVideo(s){return s.item.src;} // stream directly; stalled or broken videos are skipped by the watchdog
 async function next(){
   if(!queue.length)queue=buildRound();
   const s=queue.shift(), isMedia=s.kind==="media", isVid=isMedia&&s.item.type==="video";
@@ -285,7 +279,7 @@ async function next(){
   const v=d.querySelector("video");
   if(v&&blobUrl){d._blob=blobUrl;v.src=blobUrl;}
   requestAnimationFrame(()=>requestAnimationFrame(()=>{d.classList.add("on");$("#full").classList.toggle("on",isMedia);}));
-  if(current){const o=current;o.classList.remove("on");setTimeout(()=>{if(o._blob)URL.revokeObjectURL(o._blob);o.remove();},1500);}current=d;
+  if(current){const o=current;o.classList.remove("on");setTimeout(()=>{o.remove();},1500);}current=d;
   if(!queue.length)queue=buildRound();
   const nx=queue[0];if(nx&&nx.kind==="media"&&nx.item.type==="video"&&!(PRE&&PRE.item===nx.item))PRE={item:nx.item,p:prepVideo(nx)};
   if(v){let done=false;const go=()=>{if(!done){done=true;next();}};
@@ -300,7 +294,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-21k";
+const VERSION="2026-10-21l";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
