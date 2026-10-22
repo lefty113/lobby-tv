@@ -163,11 +163,11 @@ async function loadTide(){
   TIDE={t,h,ext};
 }
 async function loadMedia(){
-  try{const r=await fetch("https://api.github.com/repos/"+CONFIG.repo+"/contents/media",{cache:"no-store"});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    const j=(await r.json()).filter(f=>f.type==="file"&&/\.(mp4|m4v|webm|jpe?g|png|webp)$/i.test(f.name));
+  try{const ls=async p=>{const r=await fetch("https://api.github.com/repos/"+CONFIG.repo+"/contents/"+p,{cache:"no-store"});return r.ok?(await r.json()):[];};
+    const all=[...(await ls("media")).map(f=>Object.assign(f,{dir:"media/"})),...(await ls("")).map(f=>Object.assign(f,{dir:""}))];
+    const j=all.filter(f=>f.type==="file"&&/\.(mp4|m4v|webm|jpe?g|png|webp)$/i.test(f.name));
     j.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
-    MEDIA=j.map(f=>({type:/\.(mp4|m4v|webm)$/i.test(f.name)?"video":"image",name:f.name,src:"media/"+encodeURIComponent(f.name)+"?s="+f.sha.slice(0,8)}));
+    MEDIA=j.map(f=>({type:/\.(mp4|m4v|webm)$/i.test(f.name)?"video":"image",name:f.name,src:f.dir+encodeURIComponent(f.name)+"?s="+f.sha.slice(0,8)}));
   }catch(e){console.warn("media list",e);}
 }
 async function refreshAll(){await Promise.allSettled([loadWeather(),loadTide(),loadMedia()]);renderSide();setTimeout(renderSide,800);$("#upd").textContent="updated "+fmtT(new Date());}
@@ -296,7 +296,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-21m";
+const VERSION="2026-10-22n";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
