@@ -14,7 +14,7 @@ const CONFIG = {
   tz: "America/Fortaleza",
   mediaFeed: "https://script.google.com/macros/s/AKfycbwrq7oNQxWxtg67xpbLecX_-KRqNsCYcDRYi2887oRXOQ_6_EQsbNTSYobWL1RGmgOr/exec",      // Google Apps Script /exec URL (see SETUP.md). "" = no media
   surfrUrl: "",       // Surfr Spot Dashboard link. "" = skip
-  slideSeconds: { forecast: 6, tides: 6, surfr: 10, photo: 10 },
+  slideSeconds: { forecast: 7, tides: 7, surfr: 10, photo: 10 },
   mediaPerRound: 4,    // full videos/photos between each forecast + tides pair
   leftSafe: 0,         // % of screen width kept empty on the left (dead pixels on the TV). 0 = none
   repo: "lefty113/lobby-tv", // photos & videos live in the media/ folder of this GitHub repo
@@ -310,12 +310,61 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-22r";
+const VERSION="2026-10-22s";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
 tick();setInterval(tick,10000);
-refreshAll().then(next);
+
+/* ---------- media player: one video element, crossfade via frame snapshot (TVs often allow only one video decoder) ---------- */
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+let PV=null,PC=null,PI=null;
+function playerInit(){const f=$("#full");f.innerHTML='<video id="pv" muted playsinline preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000"></video><div id="pph" class="ph" style="opacity:0;transition:opacity 1s ease"></div><canvas id="pc" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;pointer-events:none"></canvas>';PV=$("#pv");PC=$("#pc");PI=$("#pph");PV.muted=true;}
+function freeze(){try{if(PV.videoWidth&&PV.style.opacity!=="0"){PC.width=PV.videoWidth;PC.height=PV.videoHeight;PC.getContext("2d").drawImage(PV,0,0,PC.width,PC.height);PC.style.transition="none";PC.style.opacity="1";}}catch(e){}}
+function unfreeze(){requestAnimationFrame(()=>requestAnimationFrame(()=>{PC.style.transition="opacity 1s ease";PC.style.opacity="0";}));}
+async function playVideo(item){
+  freeze();PV.style.opacity="1";
+  const ok=await new Promise(res=>{let done=false;const fin=x=>{if(!done){done=true;clearTimeout(t);PV.oncanplay=PV.onerror=null;res(x);}};const t=setTimeout(()=>fin(PV.readyState>=2),15000);PV.oncanplay=()=>fin(true);PV.onerror=()=>fin(false);PV.src=item.src;PV.load();});
+  if(!ok){diag("skip "+item.name+" rs="+PV.readyState+" err="+(PV.error&&PV.error.code));return false;}
+  try{await PV.play();}catch(e){diag("play "+e.message);}
+  PI.style.opacity="0";unfreeze();
+  await new Promise(res=>{let done=false,last=-1,still=0;const fin=()=>{if(!done){done=true;clearInterval(wd);clearTimeout(cap);PV.onended=PV.onerror=null;res();}};PV.onended=fin;PV.onerror=fin;const cap=setTimeout(fin,180000);const wd=setInterval(()=>{if(PV.currentTime===last){if(++still>=10)fin();}else{still=0;last=PV.currentTime;}},2000);});
+  return true;
+}
+async function showPhoto(item){
+  const tmp=new Image();const ok=await new Promise(res=>{tmp.onload=()=>res(true);tmp.onerror=()=>res(false);setTimeout(()=>res(tmp.complete&&tmp.naturalWidth>0),10000);tmp.src=item.src;});
+  if(!ok){diag("skip "+item.name);return false;}
+  freeze();PV.pause();PV.style.opacity="0";
+  PI.innerHTML='<img class="bg" alt=""><img class="fg kb" alt="">';PI.querySelectorAll("img").forEach(i=>i.src=item.src);
+  PI.classList.toggle("portrait",tmp.naturalWidth/tmp.naturalHeight<1.3);
+  PI.style.opacity="1";unfreeze();
+  await sleep((CONFIG.slideSeconds.photo||10)*1000);return true;
+}
+async function showData(kind,onShown){
+  const d=makeSlide({kind});$("#stage").appendChild(d);if(d.render)d.render();
+  const old=[...$("#stage").querySelectorAll(".slide")].filter(x=>x!==d);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>d.classList.add("on")));
+  old.forEach(o=>{o.classList.remove("on");setTimeout(()=>o.remove(),1500);});
+  if(onShown)onShown();
+  await sleep((CONFIG.slideSeconds[kind]||7)*1000);
+}
+window.__plog=[];
+async function mainLoop(){
+  playerInit();
+  for(;;){
+    let hideFull=null;
+    if(MEDIA.length){
+      $("#full").classList.add("on");
+      let played=0,tries=0;
+      while(played<CONFIG.mediaPerRound&&tries<MEDIA.length){tries++;const it=MEDIA[mediaPtr++%MEDIA.length];const t0=Date.now();const ok=it.type==="video"?await playVideo(it):await showPhoto(it);window.__plog.push(it.name+(ok?" played "+((Date.now()-t0)/1000).toFixed(1)+"s":" SKIP"));if(ok){played++;tries=0;}}
+      freeze();PV.pause();
+      hideFull=()=>{$("#full").classList.remove("on");setTimeout(()=>{PV.removeAttribute("src");PV.load();PC.style.transition="none";PC.style.opacity="0";PI.style.opacity="0";},1300);};
+    }
+    const kinds=["forecast","tides"].concat(CONFIG.surfrUrl?["surfr"]:[]);
+    for(let i=0;i<kinds.length;i++){window.__plog.push(kinds[i].toUpperCase());await showData(kinds[i],i===0?hideFull:null);}
+  }
+}
+refreshAll().then(mainLoop);
 setInterval(refreshAll,CONFIG.refreshMinutes*60e3);
 loadStation();setInterval(loadStation,2*60e3);
 setTimeout(()=>location.reload(),6*3600e3);
