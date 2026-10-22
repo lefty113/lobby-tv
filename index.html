@@ -99,6 +99,7 @@ html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inte
 <body>
 <div id="app">
   <main id="stage"></main>
+  <div id="preload" style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;overflow:hidden;pointer-events:none"></div>
   <div id="full"></div>
   <aside id="side">
     <div class="card">
@@ -163,13 +164,20 @@ async function loadTide(){
     ext.push({t:t[i]+dx*3600e3,h:a?h[i]-b*b/(4*a):h[i],type:mx?"high":"low"}); }
   TIDE={t,h,ext};
 }
+async function probeMedia(){const out=[];const paths=[];for(let n=1;n<=40;n++)for(const ext of ["mp4","jpg","png"]){paths.push(n+"."+ext);paths.push("media/"+n+"."+ext);}
+  await Promise.all(paths.map(async p=>{try{const r=await fetch(p,{method:"HEAD",cache:"no-store"});if(r.ok)out.push({name:p.split("/").pop(),path:p});}catch(e){}}));return out;}
 async function loadMedia(){
-  try{const ls=async p=>{const r=await fetch("https://api.github.com/repos/"+CONFIG.repo+"/contents/"+p,{cache:"no-store"});return r.ok?(await r.json()):[];};
+  let list=null;
+  try{const ls=async p=>{const r=await fetch("https://api.github.com/repos/"+CONFIG.repo+"/contents/"+p,{cache:"no-store"});if(r.status===404)return [];if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();};
     const all=[...(await ls("media")).map(f=>Object.assign(f,{dir:"media/"})),...(await ls("")).map(f=>Object.assign(f,{dir:""}))];
-    const j=all.filter(f=>f.type==="file"&&/\.(mp4|m4v|webm|jpe?g|png|webp)$/i.test(f.name));
-    j.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
-    MEDIA=j.map(f=>({type:/\.(mp4|m4v|webm)$/i.test(f.name)?"video":"image",name:f.name,src:f.dir+encodeURIComponent(f.name)+"?s="+f.sha.slice(0,8)}));
-  }catch(e){console.warn("media list",e);}
+    list=all.filter(f=>f.type==="file"&&/\.(mp4|m4v|webm|jpe?g|png|webp)$/i.test(f.name)).map(f=>({name:f.name,path:f.dir+f.name,sha:f.sha.slice(0,8)}));
+    try{localStorage.setItem("mediaList",JSON.stringify(list));}catch(e){}
+  }catch(e){console.warn("media list",e);
+    try{list=JSON.parse(localStorage.getItem("mediaList")||"null");}catch(_){}
+    if(!list||!list.length)list=await probeMedia();}
+  if(!list||!list.length)return;
+  list.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
+  MEDIA=list.map(f=>({type:/\.(mp4|m4v|webm)$/i.test(f.name)?"video":"image",name:f.name,src:encodeURI(f.path)+(f.sha?"?s="+f.sha:"")}));
 }
 async function refreshAll(){await Promise.allSettled([loadWeather(),loadTide(),loadMedia()]);renderSide();setTimeout(renderSide,800);$("#upd").textContent="updated "+fmtT(new Date());}
 
@@ -271,7 +279,7 @@ function makeSlide(s){
 }
 function diag(m){console.warn(m);}
 let PRE=null;
-function prepVideo(s){return new Promise(ok=>{const v=document.createElement("video");v.muted=true;v.playsInline=true;v.preload="auto";v.setAttribute("muted","");v.setAttribute("playsinline","");let fin=false;const end=x=>{if(!fin){fin=true;clearTimeout(t);ok(x);}};const t=setTimeout(()=>end(null),25000);v.addEventListener("canplay",()=>end(v),{once:true});v.addEventListener("error",()=>end(null),{once:true});v.src=s.item.src;v.load();});} // preloads; broken videos are skipped
+function prepVideo(s){return new Promise(ok=>{const v=document.createElement("video");v.muted=true;v.playsInline=true;v.preload="auto";v.setAttribute("muted","");v.setAttribute("playsinline","");const host=document.getElementById("preload");if(host)host.appendChild(v);let fin=false;const end=x=>{if(!fin){fin=true;clearTimeout(t);if(!x)v.remove();ok(x);}};const t=setTimeout(()=>end(v),15000);v.addEventListener("canplay",()=>end(v),{once:true});v.addEventListener("loadeddata",()=>end(v),{once:true});v.addEventListener("error",()=>end(null),{once:true});v.src=s.item.src;v.load();});} // preloads; broken videos are skipped
 async function next(){
   if(!queue.length)queue=buildRound();
   const s=queue.shift(), isMedia=s.kind==="media", isVid=isMedia&&s.item.type==="video";
@@ -297,7 +305,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-22o";
+const VERSION="2026-10-22p";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
