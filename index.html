@@ -18,6 +18,7 @@ const CONFIG = {
   mediaPerRound: 4,
   leftSafe: 0,         // % of screen width kept empty on the left (dead pixels on the TV). 0 = none
   repo: "lefty113/lobby-tv", // photos & videos live in the media/ folder of this GitHub repo
+  tideOffsetMin: 35,   // shifts model tide times to match Windguru/MAREA for Guajiru
   station: 16561,      // Windguru live station (KWind Ilha do Guajiru)
   refreshMinutes: 15
 };
@@ -117,7 +118,7 @@ html,body{height:100%;background:var(--canvas);color:var(--ink);font-family:Inte
       <div id="minitide"></div>
       <div class="tidenext" id="tidenext"></div>
     </div>
-    <div id="foot">Live wind: Windguru station · Forecast: GFS · Tide: Open-Meteo · <span id="upd"></span> <span id="diag" style="color:var(--amber)"></span></div>
+    <div id="foot">Live wind: Windguru station · Forecast: ICON · Tide: Open-Meteo · <span id="upd"></span> <span id="diag" style="color:var(--amber)"></span></div>
   </aside>
 </div>
 
@@ -148,14 +149,14 @@ function windWord(k){return k<10?["Light","#F2F2F4","#6E6E73"]:k<14?["Marginal",
 async function loadWeather(){
   const u=`https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}`+
   `&current=wind_speed_10m,wind_gusts_10m,wind_direction_10m&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,temperature_2m,cloud_cover,precipitation`+
-  `&wind_speed_unit=kn&models=gfs_seamless&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&forecast_days=4`;
+  `&wind_speed_unit=kn&models=icon_global&cell_selection=sea&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&forecast_days=4`;
   WX=await(await fetch(u)).json();
   if(WX&&WX.current&&WX.current.time){const off=WX.current.time*1000-Date.now();CLOCK_OFF=Math.abs(off)>20*60e3?off:0;}
 }
 async function loadTide(){
   const u=`https://marine-api.open-meteo.com/v1/marine?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}`+
   `&hourly=sea_level_height_msl&timezone=${encodeURIComponent(CONFIG.tz)}&timeformat=unixtime&past_days=1&forecast_days=3&cell_selection=sea`;
-  const j=await(await fetch(u)).json(), t=j.hourly.time.map(s=>s*1000), h=j.hourly.sea_level_height_msl, ext=[];
+  const j=await(await fetch(u)).json(), t=j.hourly.time.map(s=>s*1000+(CONFIG.tideOffsetMin||0)*60e3), h=j.hourly.sea_level_height_msl, ext=[];
   for(let i=1;i<h.length-1;i++){ if(h[i]==null||h[i-1]==null||h[i+1]==null)continue;
     const mx=h[i]>=h[i-1]&&h[i]>h[i+1], mn=h[i]<=h[i-1]&&h[i]<h[i+1]; if(!mx&&!mn)continue;
     const a=(h[i-1]-2*h[i]+h[i+1])/2,b=(h[i+1]-h[i-1])/2,dx=a?-b/(2*a):0;
@@ -296,7 +297,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-22n";
+const VERSION="2026-10-22o";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
