@@ -14,8 +14,8 @@ const CONFIG = {
   tz: "America/Fortaleza",
   mediaFeed: "https://script.google.com/macros/s/AKfycbwrq7oNQxWxtg67xpbLecX_-KRqNsCYcDRYi2887oRXOQ_6_EQsbNTSYobWL1RGmgOr/exec",      // Google Apps Script /exec URL (see SETUP.md). "" = no media
   surfrUrl: "",       // Surfr Spot Dashboard link. "" = skip
-  slideSeconds: { forecast: 10, tides: 10, surfr: 15, photo: 10 },
-  mediaSecondsBetween: 50, // ~50 s of videos/photos, then one 10 s forecast OR tides slide (alternating)
+  slideSeconds: { forecast: 6, tides: 6, surfr: 10, photo: 10 },
+  mediaPerRound: 4,    // full videos/photos between each forecast + tides pair
   leftSafe: 0,         // % of screen width kept empty on the left (dead pixels on the TV). 0 = none
   repo: "lefty113/lobby-tv", // photos & videos live in the media/ folder of this GitHub repo
   tideOffsetMin: 35,   // shifts model tide times to match Windguru/MAREA for Guajiru
@@ -266,11 +266,10 @@ function drawForecast(box){
 /* ---------- slideshow ---------- */
 let queue=[],mediaPtr=0,current=null;
 let DATA_I=0, MEDIA_T0=0;
-function buildRound(){
-  const kinds=["forecast","tides"].concat(CONFIG.surfrUrl?["surfr"]:[]);
-  if(!MEDIA.length)return kinds.map(k=>({kind:k}));
-  if(MEDIA_T0&&Date.now()-MEDIA_T0<CONFIG.mediaSecondsBetween*1000)return [{kind:"media",item:MEDIA[mediaPtr++%MEDIA.length]}];
-  MEDIA_T0=0; return [{kind:kinds[DATA_I++%kinds.length]},{kind:"media",item:MEDIA[mediaPtr++%MEDIA.length]}];
+function buildRound(){ // 4 full videos/photos, then forecast + tides
+  const kinds=["forecast","tides"].concat(CONFIG.surfrUrl?["surfr"]:[]), r=[];
+  for(let k=0;k<Math.min(CONFIG.mediaPerRound,MEDIA.length);k++)r.push({kind:"media",item:MEDIA[mediaPtr++%MEDIA.length]});
+  return r.concat(kinds.map(k=>({kind:k})));
 }
 function makeSlide(s){
   const d=document.createElement("div");d.className="slide";
@@ -303,7 +302,7 @@ async function next(){
     v.addEventListener("ended",go);
     v.addEventListener("error",()=>{diag("video "+(s.item.name||"")+" play error "+(v.error&&v.error.code));go();});
     setTimeout(go,180000);
-    let last=-1,still=0;const wd=setInterval(()=>{if(done){clearInterval(wd);return;}if(v.currentTime===last){if(++still>=4){clearInterval(wd);diag("video stalled "+(s.item.name||""));go();}}else{still=0;last=v.currentTime;}},2000);
+    let last=-1,still=0;const wd=setInterval(()=>{if(done){clearInterval(wd);return;}if(v.currentTime===last){if(++still>=10){clearInterval(wd);diag("video stalled "+(s.item.name||""));go();}}else{still=0;last=v.currentTime;}},2000);
     try{const p=v.play();if(p&&p.catch)p.catch(e=>diag("play: "+e.message));}catch(e){}
     return;}
   let timer=setTimeout(next,(CONFIG.slideSeconds[s.kind]||CONFIG.slideSeconds.photo)*1000);
@@ -311,7 +310,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-22q";
+const VERSION="2026-10-22r";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
