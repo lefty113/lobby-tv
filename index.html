@@ -14,7 +14,7 @@ const CONFIG = {
   tz: "America/Fortaleza",
   mediaFeed: "https://script.google.com/macros/s/AKfycbwrq7oNQxWxtg67xpbLecX_-KRqNsCYcDRYi2887oRXOQ_6_EQsbNTSYobWL1RGmgOr/exec",      // Google Apps Script /exec URL (see SETUP.md). "" = no media
   surfrUrl: "",       // Surfr Spot Dashboard link. "" = skip
-  slideSeconds: { forecast: 7, tides: 7, surfr: 10, photo: 10 },
+  slideSeconds: { forecast: 4, tides: 4, surfr: 8, photo: 10 },
   mediaPerRound: 4,    // full videos/photos between each forecast + tides pair
   leftSafe: 0,         // % of screen width kept empty on the left (dead pixels on the TV). 0 = none
   repo: "lefty113/lobby-tv", // photos & videos live in the media/ folder of this GitHub repo
@@ -310,7 +310,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-22s";
+const VERSION="2026-10-24t";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
@@ -351,8 +351,11 @@ async function showData(kind,onShown){
 window.__plog=[];
 async function mainLoop(){
   playerInit();
+  let hideFull=null;
   for(;;){
-    let hideFull=null;
+    const kinds=["forecast","tides"].concat(CONFIG.surfrUrl?["surfr"]:[]);
+    for(let i=0;i<kinds.length;i++){window.__plog.push(kinds[i].toUpperCase());await showData(kinds[i],i===0?hideFull:null);}
+    hideFull=null;
     if(MEDIA.length){
       $("#full").classList.add("on");
       let played=0,tries=0;
@@ -360,8 +363,6 @@ async function mainLoop(){
       freeze();PV.pause();
       hideFull=()=>{$("#full").classList.remove("on");setTimeout(()=>{PV.removeAttribute("src");PV.load();PC.style.transition="none";PC.style.opacity="0";PI.style.opacity="0";},1300);};
     }
-    const kinds=["forecast","tides"].concat(CONFIG.surfrUrl?["surfr"]:[]);
-    for(let i=0;i<kinds.length;i++){window.__plog.push(kinds[i].toUpperCase());await showData(kinds[i],i===0?hideFull:null);}
   }
 }
 refreshAll().then(mainLoop);
