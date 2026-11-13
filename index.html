@@ -166,6 +166,22 @@ async function loadTide(){
 }
 async function probeMedia(){const out=[];const paths=[];for(let n=1;n<=40;n++)for(const ext of ["mp4","jpg","png"]){paths.push(n+"."+ext);paths.push("media/"+n+"."+ext);}
   await Promise.all(paths.map(async p=>{try{const r=await fetch(p,{method:"HEAD",cache:"no-store"});if(r.ok)out.push({name:p.split("/").pop(),path:p});}catch(e){}}));return out;}
+/* ---------- local video cache: each video is stored on the TV once, then plays from disk ---------- */
+const VC="lobby-media-v1";let VC_URL=null,VC_BUSY=false;
+const VC_OK=!!(window.caches&&window.URL&&URL.createObjectURL);
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
+async function vcGet(src){if(!VC_OK)return null;try{const c=await caches.open(VC);const r=await c.match(src);if(!r)return null;const b=await r.blob();return b.size?URL.createObjectURL(b):null;}catch(e){return null;}}
+async function vcFill(){
+  if(!VC_OK||VC_BUSY||!MEDIA.length)return;VC_BUSY=true;
+  try{const c=await caches.open(VC);
+    for(let i=0;i<MEDIA.length;i++){const it=MEDIA[(mediaPtr+i)%MEDIA.length];if(it.type!=="video"||await c.match(it.src))continue;
+      try{const r=await fetch(it.src,{cache:"no-store"});if(r.status===200)await c.put(it.src,r);}catch(e){console.warn("cache",it.name,e);}}
+    const keep=new Set(MEDIA.map(m=>new URL(m.src,location.href).href));
+    for(const q of await c.keys())if(!keep.has(q.url))await c.delete(q);
+  }catch(e){console.warn("vcFill",e);}
+  VC_BUSY=false;
+}
+window.__vcStatus=async()=>{if(!VC_OK)return "no cache API";const c=await caches.open(VC);const k=await c.keys();let est="";try{const e=await navigator.storage.estimate();est=" | "+(e.usage/1048576).toFixed(0)+"MB used of "+(e.quota/1048576).toFixed(0)+"MB";}catch(_){}return k.length+"/"+MEDIA.filter(m=>m.type==="video").length+" videos cached"+est;};
 async function loadMedia(){
   let list=null;
   try{const ls=async p=>{const r=await fetch("https://api.github.com/repos/"+CONFIG.repo+"/contents/"+p,{cache:"no-store"});if(r.status===404)return [];if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();};
@@ -178,6 +194,7 @@ async function loadMedia(){
   if(!list||!list.length)return;
   list.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
   MEDIA=list.map(f=>({type:/\.(mp4|m4v|webm)$/i.test(f.name)?"video":"image",name:f.name,src:encodeURI(f.path)+(f.sha?"?s="+f.sha:"")}));
+  setTimeout(vcFill,3000);
 }
 async function refreshAll(){await Promise.allSettled([loadWeather(),loadTide(),loadMedia()]);renderSide();setTimeout(renderSide,800);$("#upd").textContent="updated "+fmtT(new Date());}
 
@@ -310,7 +327,7 @@ async function next(){
 }
 
 /* auto-update: reload when a newer version is published */
-const VERSION="2026-10-24t";
+const VERSION="2026-11-13a";
 document.documentElement.style.setProperty("--leftsafe",(CONFIG.leftSafe||0)+"vw");
 async function checkUpdate(){try{const t=await(await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"})).text();const m=t.match(/const VERSION="([^"]+)"/);if(m&&m[1]!==VERSION)location.replace(location.pathname+"?v="+Date.now()+(FORCE_THEME?"&theme="+FORCE_THEME:""));}catch(e){}}
 checkUpdate();setInterval(checkUpdate,5*60e3);
@@ -323,9 +340,11 @@ function playerInit(){const f=$("#full");f.innerHTML='<video id="pv" muted plays
 function freeze(){try{if(PV.videoWidth&&PV.style.opacity!=="0"){PC.width=PV.videoWidth;PC.height=PV.videoHeight;PC.getContext("2d").drawImage(PV,0,0,PC.width,PC.height);PC.style.transition="none";PC.style.opacity="1";}}catch(e){}}
 function unfreeze(){requestAnimationFrame(()=>requestAnimationFrame(()=>{PC.style.transition="opacity 1s ease";PC.style.opacity="0";}));}
 async function playVideo(item){
+  const cu=await vcGet(item.src);window.__plog.push(item.name+(cu?" [cache]":" [net]"));
   freeze();PV.style.opacity="1";
-  const ok=await new Promise(res=>{let done=false;const fin=x=>{if(!done){done=true;clearTimeout(t);PV.oncanplay=PV.onerror=null;res(x);}};const t=setTimeout(()=>fin(PV.readyState>=2),15000);PV.oncanplay=()=>fin(true);PV.onerror=()=>fin(false);PV.src=item.src;PV.load();});
-  if(!ok){diag("skip "+item.name+" rs="+PV.readyState+" err="+(PV.error&&PV.error.code));return false;}
+  const ok=await new Promise(res=>{let done=false;const fin=x=>{if(!done){done=true;clearTimeout(t);PV.oncanplay=PV.onerror=null;res(x);}};const t=setTimeout(()=>fin(PV.readyState>=2),15000);PV.oncanplay=()=>fin(true);PV.onerror=()=>fin(false);PV.src=cu||item.src;PV.load();});
+  {const prev=VC_URL;VC_URL=cu;if(prev&&prev!==cu)setTimeout(()=>URL.revokeObjectURL(prev),3000);}
+  if(!ok){if(cu)caches.open(VC).then(c=>c.delete(item.src)).catch(()=>{});diag("skip "+item.name+" rs="+PV.readyState+" err="+(PV.error&&PV.error.code));return false;}
   try{await PV.play();}catch(e){diag("play "+e.message);}
   PI.style.opacity="0";unfreeze();
   await new Promise(res=>{let done=false,last=-1,still=0;const fin=()=>{if(!done){done=true;clearInterval(wd);clearTimeout(cap);PV.onended=PV.onerror=null;res();}};PV.onended=fin;PV.onerror=fin;const cap=setTimeout(fin,180000);const wd=setInterval(()=>{if(PV.currentTime===last){if(++still>=10)fin();}else{still=0;last=PV.currentTime;}},2000);});
